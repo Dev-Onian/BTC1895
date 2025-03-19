@@ -2,86 +2,84 @@ import dash
 import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
+import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
+
+# Load dataset
+df = pd.read_csv("insurance.csv")
+
+# Convert categorical variables if needed
+df["sex"] = df["sex"].astype("category").cat.codes
+df["smoker"] = df["smoker"].astype("category").cat.codes
+df["region"] = df["region"].astype("category").cat.codes
+
+# Compute correlation matrix using Spearman method
+corr_matrix = df.corr(method="spearman")
 
 # Create a Dash app
 app = dash.Dash(__name__)
 
-server = app.server #required for render deployment
-
-# Initial dataset
-datasets = {
-    "dataset1": {'categories': ['A', 'B', 'C', 'D'], 'values': [10, 15, 7, 12]},
-    "dataset2": {'categories': ['A', 'B', 'C', 'D'], 'values': [5, 10, 15, 20]}
-}
-
 # Define the app layout
 app.layout = html.Div([
-    html.H1("Interactive Line & Pie Charts"),
-    
-    # Dropdown for dataset selection
-    dcc.Dropdown(
-        id='data-selector',
-        options=[
-            {'label': 'Dataset 1', 'value': 'dataset1'},
-            {'label': 'Dataset 2', 'value': 'dataset2'}
-        ],
-        value='dataset1',
-        clearable=False
-    ),
-    
-    # Sliders for dynamic value adjustments
+    html.H1("Interactive Correlation Heatmap & Scatter Plot"),  # Title
+
+    # Heatmap Graph
+    dcc.Graph(id='heatmap'),
+
+    # Scatter Plots
     html.Div([
-        html.Label("Adjust A"),
-        dcc.Slider(id='slider-A', min=0, max=30, step=1, value=10, marks={i: str(i) for i in range(0, 31, 5)}),
-        
-        html.Label("Adjust B"),
-        dcc.Slider(id='slider-B', min=0, max=30, step=1, value=15, marks={i: str(i) for i in range(0, 31, 5)}),
-
-        html.Label("Adjust C"),
-        dcc.Slider(id='slider-C', min=0, max=30, step=1, value=7, marks={i: str(i) for i in range(0, 31, 5)}),
-
-        html.Label("Adjust D"),
-        dcc.Slider(id='slider-D', min=0, max=30, step=1, value=12, marks={i: str(i) for i in range(0, 31, 5)}),
+        dcc.Graph(id='bmi-age-scatter', style={'width': '48%', 'display': 'inline-block'}),
+        dcc.Graph(id='bmi-smoke-scatter', style={'width': '48%', 'display': 'inline-block'})
     ]),
 
-    # Graphs for line and pie charts
-    html.Div([
-        dcc.Graph(id='line-chart', style={'width': '48%', 'display': 'inline-block'}),
-        dcc.Graph(id='pie-chart', style={'width': '48%', 'display': 'inline-block'})
-    ])
+    # Histogram
+    dcc.Graph(id='bmi-histogram'),
+
+    # Box Plot
+    dcc.Graph(id='region-boxplot'),
 ])
 
-# Callback to update both charts based on dropdown and slider values
+# Callback to update graphs
 @app.callback(
-    [Output('line-chart', 'figure'),
-     Output('pie-chart', 'figure')],
-    [Input('data-selector', 'value'),
-     Input('slider-A', 'value'),
-     Input('slider-B', 'value'),
-     Input('slider-C', 'value'),
-     Input('slider-D', 'value')]
+    [
+        Output('heatmap', 'figure'),
+        Output('bmi-age-scatter', 'figure'),
+        Output('bmi-smoke-scatter', 'figure'),
+        Output('bmi-histogram', 'figure'),
+        Output('region-boxplot', 'figure'),
+    ],
+    Input('heatmap', 'id')  # Dummy input to trigger updates
 )
-def update_graphs(selected_dataset, a, b, c, d):
-    """Updates the charts based on selected dataset and slider values."""
-    
-    # Get categories from the selected dataset
-    categories = datasets[selected_dataset]['categories']
-    
-    # Use slider values as updated dataset values
-    values = [a, b, c, d]
-    
-    # Create Line Chart
-    line_fig = go.Figure()
-    line_fig.add_trace(go.Scatter(x=categories, y=values, mode='lines+markers', name=selected_dataset))
-    line_fig.update_layout(title="Line Chart", xaxis_title="Category", yaxis_title="Values")
+def update_graphs(_):
 
-    # Create Pie Chart
-    pie_fig = go.Figure()
-    pie_fig.add_trace(go.Pie(labels=categories, values=values, name=selected_dataset))
-    pie_fig.update_layout(title="Pie Chart")
-    
-    return line_fig, pie_fig
+    # Create heatmap
+    heat_fig = go.Figure(data=go.Heatmap(
+        z=corr_matrix.values,
+        x=corr_matrix.columns,
+        y=corr_matrix.columns,
+        colorscale='Viridis'
+    ))
+    heat_fig.update_layout(title="Spearman Correlation Heatmap")
+
+    # Scatter plot: BMI vs. Charges (colored by Age)
+    bmi_age_fig = px.scatter(df, x="bmi", y="charges", color="age", title="BMI vs. Charges by Age")
+
+    # Scatter plot: BMI vs. Charges (colored by Smoker)
+    smoke_fig = px.scatter(df, x="bmi", y="charges", color=df["smoker"].astype(str),
+                           title="BMI vs. Charges by Smoking Status")
+
+    # Histogram: BMI vs. Charges (colored by Smoker)
+    hist_fig = px.histogram(df, x="bmi", y="charges", color=df["smoker"].astype(str),
+                            title="BMI vs. Charges by Smoking Status")
+
+    # Bar plot: Average charges by region
+    region_avg = df.groupby("region")["charges"].mean().reset_index()
+    boxplot_fig = px.bar(region_avg, x="region", y="charges", color="region",
+                         title="Average Insurance Charges by Region")
+
+    return heat_fig, bmi_age_fig, smoke_fig, hist_fig, boxplot_fig
+
 
 # Run the app
 if __name__ == '__main__':
